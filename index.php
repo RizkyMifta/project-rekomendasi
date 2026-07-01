@@ -1,90 +1,135 @@
 <?php
-// Konfigurasi Database
+// Konfigurasi koneksi database
 $host = "localhost";
 $db   = "parfum_db";
 $user = "root";
 $pass = "";
 
+// Membuat koneksi ke database menggunakan PDO
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$db", $user, $pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, // Menampilkan error sebagai Exception
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC // Hasil query berbentuk array asosiatif
     ]);
 } catch (PDOException $e) {
-    die("Koneksi gagal: " . $e->getMessage());
+    die("Koneksi gagal: " . $e->getMessage()); // Menghentikan program jika koneksi gagal
 }
 
 // ================= FUNGSI =================
+
+// Mengubah teks menjadi token (kata-kata)
 function tokenize($t) {
-    $t = strtolower($t);
-    $t = preg_replace('/[^a-z\s]/', '', $t);
-    return array_filter(explode(' ', $t));
+    $t = strtolower($t); // Mengubah semua huruf menjadi kecil
+    $t = preg_replace('/[^a-z\s]/', '', $t); // Menghapus karakter selain huruf dan spasi
+    return array_filter(explode(' ', $t)); // Memisahkan teks menjadi array kata
 }
 
+// Menghitung frekuensi kemunculan setiap kata (TF)
 function tf($terms) {
     $tf = [];
     foreach ($terms as $t) $tf[$t] = ($tf[$t] ?? 0) + 1;
     return $tf;
 }
 
+// Menghitung nilai Inverse Document Frequency (IDF)
 function idf($docs) {
-    $idf = []; 
-    $N = count($docs);
+    $idf = [];
+    $N = count($docs); // Jumlah seluruh dokumen
+
     foreach ($docs as $d) {
-        foreach (array_unique($d) as $t) $idf[$t] = ($idf[$t] ?? 0) + 1;
+        foreach (array_unique($d) as $t)
+            $idf[$t] = ($idf[$t] ?? 0) + 1; // Menghitung jumlah dokumen yang mengandung kata
     }
-    foreach ($idf as $t => $df) $idf[$t] = log($N / $df);
+
+    foreach ($idf as $t => $df)
+        $idf[$t] = log($N / $df); // Menghitung nilai IDF
+
     return $idf;
 }
 
+// Menghitung bobot TF-IDF setiap kata
 function tfidf($tf, $idf) {
     $v = [];
-    foreach ($tf as $t => $f) $v[$t] = $f * ($idf[$t] ?? 0);
+    foreach ($tf as $t => $f)
+        $v[$t] = $f * ($idf[$t] ?? 0);
     return $v;
 }
 
+// Menghitung tingkat kemiripan dua vektor menggunakan Cosine Similarity
 function cosine($a, $b) {
     $dot = $na = $nb = 0;
+
     foreach ($a as $t => $v) {
-        $dot += $v * ($b[$t] ?? 0);
-        $na += $v * $v;
+        $dot += $v * ($b[$t] ?? 0); // Dot product
+        $na += $v * $v; // Panjang vektor A
     }
-    foreach ($b as $v) $nb += $v * $v;
+
+    foreach ($b as $v)
+        $nb += $v * $v; // Panjang vektor B
+
     return ($na && $nb) ? $dot / (sqrt($na) * sqrt($nb)) : 0;
 }
 
 // ================= AMBIL DATA =================
+
+// Mengambil seluruh data parfum dari database
 $stmt = $pdo->query("SELECT * FROM parfum ORDER BY id ASC");
+
 $data = [];
+
+// Menyimpan data parfum ke dalam array
 while ($r = $stmt->fetch()) {
+
+    // Menggabungkan top, middle, dan base notes menjadi satu dokumen
     $doc = $r['top_notes'] . ' ' . $r['middle_notes'] . ' ' . $r['base_notes'];
+
     $data[] = [
         'id'    => $r['id'],
         'nama'  => $r['nama_parfum'],
         'brand' => $r['brand'],
         'foto'  => $r['foto'],
-        'doc'   => tokenize($doc)
+        'doc'   => tokenize($doc) // Mengubah dokumen menjadi token
     ];
 }
 
 // ================= LOGIKA SEARCH =================
+
+// Mengambil kata kunci pencarian dari URL
 $keyword = $_GET['aroma'] ?? '';
+
 $recommendations = [];
 
+// Menjalankan proses pencarian jika keyword tidak kosong
 if (!empty($keyword)) {
-    $query_terms = tokenize($keyword);
-    $docs = array_column($data, 'doc');
-    $idf = idf($docs);
-    $query_vec = tfidf(tf($query_terms), $idf);
 
+    $query_terms = tokenize($keyword); // Tokenisasi keyword
+
+    $docs = array_column($data, 'doc'); // Mengambil seluruh dokumen parfum
+
+    $idf = idf($docs); // Menghitung IDF
+
+    $query_vec = tfidf(tf($query_terms), $idf); // Membuat vektor TF-IDF query
+
+    // Menghitung kemiripan query dengan setiap parfum
     foreach ($data as $d) {
-        $doc_vec = tfidf(tf($d['doc']), $idf);
-        $score = cosine($query_vec, $doc_vec);
+
+        $doc_vec = tfidf(tf($d['doc']), $idf); // Membuat vektor TF-IDF dokumen
+
+        $score = cosine($query_vec, $doc_vec); // Menghitung skor Cosine Similarity
+
+        // Menyimpan parfum yang memiliki kemiripan
         if ($score > 0) {
-            $recommendations[] = ['data' => $d, 'score' => $score];
+            $recommendations[] = [
+                'data' => $d,
+                'score' => $score
+            ];
         }
     }
+
+    // Mengurutkan rekomendasi berdasarkan skor tertinggi
     usort($recommendations, fn($a, $b) => $b['score'] <=> $a['score']);
+
+    // Mengambil 8 rekomendasi terbaik
     $recommendations = array_slice($recommendations, 0, 8);
 }
 ?>
