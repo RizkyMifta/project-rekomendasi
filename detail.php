@@ -1,30 +1,45 @@
 <?php
+// Konfigurasi koneksi database
 $servername = "localhost";
 $username   = "root";
 $password   = "";
 $dbname     = "parfum_db";
 
+// Membuat koneksi ke database MySQL
 $conn = new mysqli($servername, $username, $password, $dbname);
+
+// Mengecek apakah koneksi berhasil
 if ($conn->connect_error) {
     die("Koneksi gagal: " . $conn->connect_error);
 }
 
 // ================= VALIDASI ID =================
+
+// Memastikan parameter id tersedia dan berupa angka
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     die("Parfum tidak ditemukan.");
 }
 
+// Mengambil id dari URL dan mengubahnya menjadi tipe integer
 $id = (int) $_GET['id'];
 
 // ================= QUERY DATA =================
+
+// Mengambil data parfum berdasarkan id
 $sql = "SELECT * FROM parfum WHERE id = $id";
+
+// Menjalankan query ke database
 $result = $conn->query($sql);
 
+// Mengecek apakah data parfum ditemukan
 if ($result->num_rows === 0) {
     die("Parfum tidak ditemukan.");
 }
 
+// Mengambil data parfum dalam bentuk array asosiatif
 $parfum = $result->fetch_assoc();
+
+// Menutup koneksi database
 $conn->close();
 ?>
 <!DOCTYPE html>
